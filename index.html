@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guardian Wing | AI Drone Safety & Rapid Rescue Control Room</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Leaflet Map CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        .radar-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: .4; transform: scale(1.08); }
+        }
+        .feed-glow {
+            box-shadow: 0 0 25px rgba(239, 68, 68, 0.35);
+        }
+        #map { min-height: 280px; height: 100%; border-radius: 0.75rem; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex flex-col">
+
+    <!-- Top Navigation / Header -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50 px-6 py-3.5 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-rose-600/30">
+                <i data-lucide="shield-alert" class="w-6 h-6 text-white"></i>
+            </div>
+            <div>
+                <div class="flex items-center space-x-2">
+                    <h1 class="text-lg font-bold tracking-tight text-white">GUARDIAN WING C4I</h1>
+                    <span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-500/20 text-rose-400 border border-rose-500/30">WOMEN SAFETY RECON</span>
+                    <span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> SYSTEM LIVE
+                    </span>
+                </div>
+                <p class="text-xs text-slate-400">Autonomous Surveillance & Emergency Rapid Response System</p>
+            </div>
+        </div>
+
+        <!-- Telemetry bar -->
+        <div class="flex items-center space-x-6 text-xs">
+            <div class="bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/60 flex items-center gap-2">
+                <i data-lucide="drone" class="w-4 h-4 text-cyan-400"></i>
+                <span class="text-slate-400">Drone ID:</span>
+                <span class="font-mono font-bold text-slate-200" id="droneIdDisplay">UAV-GW-09</span>
+            </div>
+            <div class="bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/60 flex items-center gap-2">
+                <i data-lucide="battery-charging" class="w-4 h-4 text-emerald-400"></i>
+                <span class="text-slate-400">Battery:</span>
+                <span class="font-mono font-bold text-emerald-300" id="droneBatteryDisplay">88%</span>
+            </div>
+            <div class="bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/60 flex items-center gap-2">
+                <i data-lucide="navigation" class="w-4 h-4 text-amber-400"></i>
+                <span class="text-slate-400">Altitude:</span>
+                <span class="font-mono font-bold text-amber-300" id="droneAltDisplay">42.5m</span>
+            </div>
+            <!-- Privacy Toggle -->
+            <button id="privacyBtn" onclick="togglePrivacy()" class="px-3 py-1.5 rounded-lg border flex items-center gap-2 transition bg-emerald-950/60 border-emerald-600/60 text-emerald-300 hover:bg-emerald-900/50">
+                <i data-lucide="eye-off" class="w-4 h-4"></i>
+                <span id="privacyLabel">Privacy Mask: ACTIVE</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Grid Dashboard -->
+    <main class="flex-1 p-6 grid grid-cols-12 gap-6">
+
+        <!-- Left Column: Video Feed & Scenario Injector (Col 7) -->
+        <div class="col-span-12 lg:col-span-7 flex flex-col space-y-5">
+            
+            <!-- Video Feed Frame -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col relative">
+                <!-- Video Stream Header Bar -->
+                <div class="bg-slate-900/95 px-4 py-2.5 border-b border-slate-800 flex items-center justify-between text-xs">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+                        <span class="font-semibold uppercase tracking-wider text-slate-300">Gimbal 4K Night-Vision Stream</span>
+                    </div>
+                    <div class="flex items-center space-x-3 text-slate-400">
+                        <span id="densityBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">SCANNING SECTOR</span>
+                        <span class="font-mono" id="streamFps">30 FPS</span>
+                    </div>
+                </div>
+
+                <!-- Video Viewport -->
+                <div class="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
+                    <img id="droneVideoFeed" src="" alt="Drone Video Feed" class="w-full h-full object-contain" />
+                    
+                    <!-- Emergency Alert Pill Overlay -->
+                    <div id="urgentAlertBanner" class="hidden absolute top-4 left-4 right-4 bg-rose-600/90 backdrop-blur-md text-white px-4 py-2.5 rounded-xl border border-rose-400/50 flex items-center justify-between shadow-2xl animate-bounce">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="alert-triangle" class="w-6 h-6 text-amber-300"></i>
+                            <div>
+                                <div class="font-bold text-sm tracking-wide" id="alertBannerTitle">EMERGENCY DETECTED</div>
+                                <div class="text-xs text-rose-100" id="alertBannerDesc">Incident in isolated sector. Dispatched notification to command center.</div>
+                            </div>
+                        </div>
+                        <span class="text-xs font-mono bg-black/40 px-2.5 py-1 rounded-md border border-white/20">AWAITING DISPATCH</span>
+                    </div>
+
+                    <!-- Drone Crosshairs & On-Screen Display -->
+                    <div class="absolute bottom-3 left-4 text-[11px] font-mono text-cyan-400/80 drop-shadow flex gap-4">
+                        <span id="coordsDisplay">LAT: 28.535500 | LNG: 77.391000</span>
+                        <span>FOV: 84° WIDE</span>
+                    </div>
+                </div>
+
+                <!-- Drone Payload Actuator Controls -->
+                <div class="bg-slate-900/90 p-4 border-t border-slate-800 flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Drone Interventions:</span>
+                    </div>
+                    <div class="flex items-center space-x-3 text-xs">
+                        <button onclick="toggleActuator('spotlight')" id="spotlightBtn" class="px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 flex items-center gap-2 transition">
+                            <i data-lucide="flashlight" class="w-4 h-4 text-amber-400"></i>
+                            <span>High-Lumen Spotlight</span>
+                        </button>
+                        <button onclick="toggleActuator('siren')" id="sirenBtn" class="px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 flex items-center gap-2 transition">
+                            <i data-lucide="megaphone" class="w-4 h-4 text-rose-400"></i>
+                            <span>Deterrent Siren (110dB)</span>
+                        </button>
+                        <button onclick="toggleActuator('audio')" id="audioBtn" class="px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 flex items-center gap-2 transition">
+                            <i data-lucide="phone-call" class="w-4 h-4 text-emerald-400"></i>
+                            <span>2-Way Voice Intercom</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Simulation & Field Testing Scenario Controller -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col space-y-3">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+                        <i data-lucide="sliders" class="w-4 h-4 text-rose-500"></i>
+                        AI Scenario Injector & Testbed
+                    </h3>
+                    <span class="text-xs text-slate-400">Simulate incident detection on isolated routes</span>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+                    <button onclick="setScenario('empty_road')" class="p-2.5 rounded-xl border border-slate-700/80 bg-slate-800/60 hover:bg-slate-800 hover:border-slate-500 text-left transition">
+                        <div class="font-semibold text-slate-300">1. Empty Road</div>
+                        <div class="text-[10px] text-slate-400">No pedestrians</div>
+                    </button>
+                    <button onclick="setScenario('normal_patrol')" class="p-2.5 rounded-xl border border-slate-700/80 bg-slate-800/60 hover:bg-slate-800 hover:border-slate-500 text-left transition">
+                        <div class="font-semibold text-slate-300">2. Normal Solo</div>
+                        <div class="text-[10px] text-slate-400">Lone pedestrian</div>
+                    </button>
+                    <button onclick="setScenario('suspicious_stalking')" class="p-2.5 rounded-xl border border-amber-800/60 bg-amber-950/20 hover:bg-amber-900/30 text-left transition">
+                        <div class="font-semibold text-amber-400">3. Stalking/Shadow</div>
+                        <div class="text-[10px] text-amber-300/80">Trailing proximity</div>
+                    </button>
+                    <button onclick="setScenario('distress_sos')" class="p-2.5 rounded-xl border border-rose-800/60 bg-rose-950/20 hover:bg-rose-900/30 text-left transition">
+                        <div class="font-semibold text-rose-400">4. SOS Wave</div>
+                        <div class="text-[10px] text-rose-300/80">Distress gesture</div>
+                    </button>
+                    <button onclick="setScenario('physical_altercation')" class="p-2.5 rounded-xl border border-red-800/70 bg-red-950/30 hover:bg-red-900/40 text-left transition">
+                        <div class="font-semibold text-red-400">5. Harassment</div>
+                        <div class="text-[10px] text-red-300/80">Grapple / Restraint</div>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Right Column: Control Room Dispatch, Verification & Live Map (Col 5) -->
+        <div class="col-span-12 lg:col-span-5 flex flex-col space-y-5">
+            
+            <!-- Live Map & Drone Tracking -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col space-y-3">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+                        <i data-lucide="map-pin" class="w-4 h-4 text-emerald-400"></i>
+                        Live Drone Telemetry & Isolated Route Map
+                    </h3>
+                    <span class="text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400"></span> GPS LOCKED
+                    </span>
+                </div>
+                <div class="h-64 rounded-xl overflow-hidden border border-slate-800" id="map"></div>
+                <div class="flex items-center justify-between text-xs text-slate-400 pt-1">
+                    <span>Active Geofence: Sector 62 Outer Beltway</span>
+                    <span class="text-slate-300 font-medium">Patrol Speed: 28 km/h</span>
+                </div>
+            </div>
+
+            <!-- Incident Alert & Personnel Verification Queue -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex-1 flex flex-col">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="bell-ring" class="w-4 h-4 text-rose-500"></i>
+                        <h3 class="text-sm font-bold text-slate-200">Incident Verification & Rescue Queue</h3>
+                    </div>
+                    <span id="incidentCounter" class="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-rose-950 text-rose-400 border border-rose-800/60">0 Active</span>
+                </div>
+
+                <!-- Alert Cards Scroll Area -->
+                <div id="alertsContainer" class="mt-4 space-y-3 overflow-y-auto max-h-[380px] pr-1">
+                    <div class="p-6 text-center text-slate-500 text-xs flex flex-col items-center justify-center">
+                        <i data-lucide="check-circle" class="w-8 h-8 text-slate-600 mb-2"></i>
+                        No pending critical alerts. Drone continuously monitoring isolated routes.
+                    </div>
+                </div>
+
+                <!-- Action Audit Log -->
+                <div class="mt-4 pt-3 border-t border-slate-800">
+                    <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Rescue Coordination Audit Log</div>
+                    <div id="auditLog" class="text-xs space-y-1.5 max-h-24 overflow-y-auto font-mono text-slate-400">
+                        <div class="text-slate-500">System initialized. Awaiting dispatch actions...</div>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Modal for Evidence Snapshot View -->
+    <div id="evidenceModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-xl w-full p-6 shadow-2xl">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                    <i data-lucide="image" class="w-4 h-4 text-cyan-400"></i> Incident Snapshot Evidence
+                </h4>
+                <button onclick="closeEvidenceModal()" class="text-slate-400 hover:text-white">&times;</button>
+            </div>
+            <div class="mt-4 rounded-xl overflow-hidden border border-slate-800">
+                <img id="modalEvidenceImg" src="" alt="Evidence" class="w-full object-contain max-h-80" />
+            </div>
+            <div class="mt-4 text-xs text-slate-300" id="modalEvidenceDesc"></div>
+            <div class="mt-4 flex justify-end">
+                <button onclick="closeEvidenceModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg text-slate-200">Close Window</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Script -->
+    <script>
+        lucide.createIcons();
+
+        // Leaflet Map Initialization
+        const map = L.map('map').setView([28.5355, 77.3910], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap'
+        }).addTo(map);
+
+        // Drone Icon Marker
+        const droneIcon = L.divIcon({
+            html: '<div class="w-6 h-6 bg-cyan-500 rounded-full border-2 border-white flex items-center justify-center shadow-lg"><div class="w-2 h-2 bg-white rounded-full animate-ping"></div></div>',
+            className: 'custom-drone-pin',
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+        const droneMarker = L.marker([28.5355, 77.3910], { icon: droneIcon }).addTo(map);
+
+        // State
+        let isPrivacyOn = true;
+        let spotlightActive = false;
+        let sirenActive = false;
+        let audioActive = false;
+
+        // WebSocket Stream Connection
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/stream`;
+        let socket;
+
+        function connectWebSocket() {
+            socket = new WebSocket(wsUrl);
+
+            socket.onmessage = function(event) {
+                const payload = JSON.parse(event.data);
+                
+                // Update Feed Frame
+                if (payload.frame) {
+                    document.getElementById('droneVideoFeed').src = 'data:image/jpeg;base64,' + payload.frame;
+                }
+
+                // Update Telemetry
+                if (payload.telemetry) {
+                    const t = payload.telemetry;
+                    document.getElementById('droneBatteryDisplay').innerText = `${t.battery}%`;
+                    document.getElementById('droneAltDisplay').innerText = `${t.altitude}m`;
+                    document.getElementById('coordsDisplay').innerText = `LAT: ${t.lat.toFixed(6)} | LNG: ${t.lng.toFixed(6)}`;
+                    droneMarker.setLatLng([t.lat, t.lng]);
+                }
+
+                // Update Density & Alert Status
+                if (payload.incident) {
+                    const inc = payload.incident;
+                    const badge = document.getElementById('densityBadge');
+                    badge.innerText = inc.density_level;
+
+                    const banner = document.getElementById('urgentAlertBanner');
+                    if (inc.is_emergency) {
+                        banner.classList.remove('hidden');
+                        document.getElementById('alertBannerTitle').innerText = `CRITICAL: ${inc.emergency_type.replace(/_/g, ' ')}`;
+                        document.getElementById('alertBannerDesc').innerText = `${inc.alert_description} (Confidence: ${Math.round(inc.confidence * 100)}%)`;
+                    } else {
+                        banner.classList.add('hidden');
+                    }
+                }
+
+                // Sync Alerts List
+                if (payload.alerts) {
+                    renderAlerts(payload.alerts);
+                }
+
+                // Sync Audit Logs
+                if (payload.audit_logs) {
+                    renderAudit(payload.audit_logs);
+                }
+            };
+
+            socket.onclose = function() {
+                setTimeout(connectWebSocket, 1500);
+            };
+        }
+
+        connectWebSocket();
+
+        // Control Actions
+        async function setScenario(scenarioName) {
+            await fetch(`/api/scenario?name=${scenarioName}`, { method: 'POST' });
+        }
+
+        async function togglePrivacy() {
+            isPrivacyOn = !isPrivacyOn;
+            const res = await fetch(`/api/privacy?enabled=${isPrivacyOn}`, { method: 'POST' });
+            const data = await res.json();
+            const btn = document.getElementById('privacyBtn');
+            const lbl = document.getElementById('privacyLabel');
+            if (data.privacy_mode) {
+                btn.className = "px-3 py-1.5 rounded-lg border flex items-center gap-2 transition bg-emerald-950/60 border-emerald-600/60 text-emerald-300 hover:bg-emerald-900/50";
+                lbl.innerText = "Privacy Mask: ACTIVE";
+            } else {
+                btn.className = "px-3 py-1.5 rounded-lg border flex items-center gap-2 transition bg-amber-950/60 border-amber-600/60 text-amber-300 hover:bg-amber-900/50";
+                lbl.innerText = "Privacy Mask: DISPATCH OVERRIDE";
+            }
+        }
+
+        async function toggleActuator(type) {
+            const res = await fetch(`/api/actuator?type=${type}`, { method: 'POST' });
+            const data = await res.json();
+            
+            const btn = document.getElementById(`${type}Btn`);
+            if (data[type]) {
+                btn.classList.add('bg-rose-900/70', 'border-rose-500', 'text-white');
+                btn.classList.remove('bg-slate-800', 'text-slate-300');
+            } else {
+                btn.classList.remove('bg-rose-900/70', 'border-rose-500', 'text-white');
+                btn.classList.add('bg-slate-800', 'text-slate-300');
+            }
+        }
+
+        async function verifyAlert(incidentId, action) {
+            await fetch(`/api/verify-alert?incident_id=${incidentId}&action=${action}`, { method: 'POST' });
+        }
+
+        function renderAlerts(alerts) {
+            const container = document.getElementById('alertsContainer');
+            const counter = document.getElementById('incidentCounter');
+            counter.innerText = `${alerts.length} Reported`;
+
+            if (alerts.length === 0) {
+                container.innerHTML = `
+                    <div class="p-6 text-center text-slate-500 text-xs flex flex-col items-center justify-center">
+                        <i data-lucide="check-circle" class="w-8 h-8 text-slate-600 mb-2"></i>
+                        No pending alerts. Drone actively patrolling isolated roads.
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
+            container.innerHTML = alerts.map(alert => `
+                <div class="p-3.5 rounded-xl border ${alert.status === 'PENDING_VERIFICATION' ? 'border-rose-600/60 bg-rose-950/20' : 'border-emerald-600/40 bg-emerald-950/10'} flex flex-col space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold ${alert.status === 'PENDING_VERIFICATION' ? 'text-rose-400' : 'text-emerald-400'} flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full ${alert.status === 'PENDING_VERIFICATION' ? 'bg-rose-500 animate-pulse' : 'bg-emerald-400'}"></span>
+                            ${alert.emergency_type.replace(/_/g, ' ')}
+                        </span>
+                        <span class="text-[10px] font-mono text-slate-400">${alert.timestamp}</span>
+                    </div>
+                    
+                    <div class="text-xs text-slate-300">${alert.description}</div>
+                    
+                    <div class="text-[11px] text-slate-400 font-mono">
+                        Coords: [${alert.location.latitude}, ${alert.location.longitude}] | Sector 62 Outer Bypass
+                    </div>
+
+                    <div class="pt-2 flex items-center justify-between border-t border-slate-800">
+                        <button onclick="viewEvidence('${alert.snapshot}', '${alert.description}')" class="text-xs text-cyan-400 hover:text-cyan-300 underline flex items-center gap-1">
+                            <i data-lucide="eye" class="w-3.5 h-3.5"></i> Review Snapshot
+                        </button>
+                        
+                        ${alert.status === 'PENDING_VERIFICATION' ? `
+                            <div class="flex items-center space-x-2">
+                                <button onclick="verifyAlert('${alert.id}', 'DISPATCH_RESCUE_TEAM')" class="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold">
+                                    Dispatch Rescue
+                                </button>
+                                <button onclick="verifyAlert('${alert.id}', 'DISMISS')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs">
+                                    Dismiss
+                                </button>
+                            </div>
+                        ` : `
+                            <span class="text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/40">
+                                Verified: ${alert.verification.action_taken}
+                            </span>
+                        `}
+                    </div>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function renderAudit(logs) {
+            const container = document.getElementById('auditLog');
+            if (logs.length === 0) return;
+            container.innerHTML = logs.map(l => `
+                <div><span class="text-cyan-400">[${l.timestamp}]</span> <span class="text-slate-200">${l.operator}</span>: <span class="text-rose-300">${l.action}</span> for <span class="text-slate-400">${l.incident_id}</span></div>
+            `).join('');
+        }
+
+        function viewEvidence(b64, desc) {
+            document.getElementById('modalEvidenceImg').src = 'data:image/jpeg;base64,' + b64;
+            document.getElementById('modalEvidenceDesc').innerText = desc;
+            document.getElementById('evidenceModal').classList.remove('hidden');
+        }
+
+        function closeEvidenceModal() {
+            document.getElementById('evidenceModal').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
